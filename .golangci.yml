@@ -1,12 +1,17 @@
 linters:
   enable-all: true
   disable:
+    - cyclop
+    - dupl
+    - err113
     - exhaustruct
     - goconst
+    - mnd
     - paralleltest
     - revive
     - stylecheck
     - tenv
     - testpackage
     - varnamelen
+    - wrapcheck
     - wsl

@@ -1,0 +1,12 @@
+linters:
+  enable-all: true
+  disable:
+    - exhaustruct
+    - goconst
+    - paralleltest
+    - revive
+    - stylecheck
+    - tenv
+    - testpackage
+    - varnamelen
+    - wsl

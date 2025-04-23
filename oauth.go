@@ -4,18 +4,21 @@ import (
 	"context"
 	"crypto"
 	"crypto/rsa"
-	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
-	"encoding/pem"
 	"errors"
 	"fmt"
+	"io"
+	"math/big"
 	"net/http"
+	"net/url"
 	"strings"
+	"sync"
+	"time"
 )
 
 type Config struct {
-	PublicKeys map[string]string
+	JwksEndpoints []string
 }
 
 func CreateConfig() *Config {
@@ -23,23 +26,38 @@ func CreateConfig() *Config {
 }
 
 type Plugin struct {
-	next        http.Handler
-	name        string
-	public_keys map[string]*rsa.PublicKey
+	next             http.Handler
+	name             string
+	public_keys      map[string]*rsa.PublicKey
+	public_keys_lock sync.RWMutex
+	cancelCtx        context.Context //nolint: containedctx
+	jwksEndpoints    []*url.URL
+	httpClient       *http.Client
 }
 
-func New(_ context.Context, next http.Handler, config *Config, name string) (http.Handler, error) {
+var backgroundRefreshPublicKeysCancel map[string]context.CancelFunc = make(map[string]context.CancelFunc) //nolint:gochecknoglobals,lll
+
+func New(ctx context.Context, next http.Handler, config *Config, name string) (http.Handler, error) {
 	plugin := &Plugin{
-		next:        next,
-		name:        name,
-		public_keys: make(map[string]*rsa.PublicKey),
+		next:          next,
+		name:          name,
+		public_keys:   make(map[string]*rsa.PublicKey),
+		jwksEndpoints: []*url.URL{},
+		httpClient:    &http.Client{},
 	}
 
-	if len(config.PublicKeys) > 0 {
-		if err := plugin.ParsePublicKeys(config.PublicKeys); err != nil {
-			return nil, err
-		}
+	if err := plugin.ParseJwksEndpoints(config.JwksEndpoints); err != nil {
+		return nil, err
 	}
+
+	if backgroundRefreshPublicKeysCancel[name] != nil {
+		fmt.Println("Cancel BackgroundRefreshPublicKeys: ", name)
+		backgroundRefreshPublicKeysCancel[name]()
+	}
+	cancel, cancelFunc := context.WithCancel(ctx)
+	backgroundRefreshPublicKeysCancel[name] = cancelFunc
+	plugin.cancelCtx = cancel
+	go plugin.BackgroundRefreshPublicKeys()
 
 	return plugin, nil
 }
@@ -53,28 +71,14 @@ func (plugin *Plugin) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	plugin.next.ServeHTTP(rw, req)
 }
 
-func (plugin *Plugin) ParsePublicKeys(public_keys map[string]string) error {
-	for kid, pem_public_key := range public_keys {
-		block, _ := pem.Decode([]byte(pem_public_key))
-		if block == nil {
-			return errors.New("fail to decode public key's PEM")
-		}
-
-		if block.Type != "PUBLIC KEY" {
-			return errors.New("pem is not of type RSA")
-		}
-
-		public_key, err := x509.ParsePKIXPublicKey(block.Bytes)
+func (plugin *Plugin) ParseJwksEndpoints(jwks_endpoints []string) error {
+	for _, jwks_endpoint := range jwks_endpoints {
+		url, err := url.ParseRequestURI(jwks_endpoint)
 		if err != nil {
-			return fmt.Errorf("failed to parse RSA public key: kid=%s, error=%w", kid, err)
-		}
-		var rsa_public_key *rsa.PublicKey
-		var ok bool
-		if rsa_public_key, ok = public_key.(*rsa.PublicKey); !ok {
-			return fmt.Errorf("public key is not RSA: kid=%s", kid)
+			return fmt.Errorf("ParseJwksEndpoints - invalid url: '%s'", jwks_endpoint)
 		}
 
-		plugin.public_keys[kid] = rsa_public_key
+		plugin.jwksEndpoints = append(plugin.jwksEndpoints, url)
 	}
 
 	return nil
@@ -148,4 +152,92 @@ func VerifySignature(public_key *rsa.PublicKey, value []byte, signature []byte) 
 	}
 
 	return nil
+}
+
+func (plugin *Plugin) BackgroundRefreshPublicKeys() {
+	plugin.RefreshPublicKeys(plugin.cancelCtx)
+	for {
+		select {
+		case <-plugin.cancelCtx.Done():
+			fmt.Println("Quit BackgroundRefreshPublicKeys: ", plugin.name)
+
+			return
+		case <-time.After(15 * time.Minute):
+			plugin.RefreshPublicKeys(plugin.cancelCtx)
+		}
+	}
+}
+
+type Key struct {
+	Kid string `json:"kid"`
+	Kty string `json:"kty"`
+	Alg string `json:"alg"`
+	Use string `json:"use"`
+	N   string `json:"n"`
+	E   string `json:"e"`
+}
+
+type Keys struct {
+	Keys []Key `json:"keys"`
+}
+
+func (plugin *Plugin) RefreshPublicKeys(ctx context.Context) {
+	fetched_public_keys := make(map[string]*rsa.PublicKey)
+
+	for _, jwks_endpoint := range plugin.jwksEndpoints {
+		fmt.Println("RefreshPublicKeys - Endpoint: ", jwks_endpoint)
+		request, err := http.NewRequestWithContext(ctx, http.MethodGet, jwks_endpoint.String(), nil)
+		if err != nil {
+			fmt.Println("RefreshPublicKeys - Failed to create request for endpoint: ", jwks_endpoint)
+
+			continue
+		}
+		response, err := plugin.httpClient.Do(request)
+		if err != nil {
+			fmt.Println("RefreshPublicKeys - Failed to request endpoint: ", jwks_endpoint)
+
+			continue
+		}
+		body, err := io.ReadAll(response.Body)
+		defer response.Body.Close()
+		if err != nil {
+			fmt.Println("RefreshPublicKeys - Failed to read response for endpoint: ", jwks_endpoint)
+
+			continue
+		}
+		var jwks_keys Keys
+		err = json.Unmarshal(body, &jwks_keys)
+		if err != nil {
+			fmt.Println("RefreshPublicKeys - Failed to parse response for endpoint: ", jwks_endpoint)
+
+			continue
+		}
+
+		for _, key := range jwks_keys.Keys {
+			switch key.Kty {
+			case "RSA":
+				{
+					n_bytes, err := base64.RawURLEncoding.DecodeString(key.N)
+					if err != nil {
+						break
+					}
+					e_bytes, err := base64.RawURLEncoding.DecodeString(key.E)
+					if err != nil {
+						break
+					}
+					rsa_public_key := new(rsa.PublicKey)
+					rsa_public_key.N = new(big.Int).SetBytes(n_bytes)
+					rsa_public_key.E = int(new(big.Int).SetBytes(e_bytes).Uint64()) //nolint:gosec
+					fetched_public_keys[key.Kid] = rsa_public_key
+				}
+			}
+		}
+	}
+
+	plugin.public_keys_lock.Lock()
+	defer plugin.public_keys_lock.Unlock()
+
+	for kid, value := range fetched_public_keys {
+		plugin.public_keys[kid] = value
+	}
 }

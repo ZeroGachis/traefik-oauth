@@ -7,5 +7,5 @@ summary: 'Traefik plugin for OAuth at Smartway'
 iconPath: .assets/icon.png
 
 testData:
-  Username:
-    - "client1"
+  JwksEndpoints:
+    

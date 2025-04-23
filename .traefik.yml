@@ -1,6 +1,6 @@
 displayName: SW OAuth
 type: middleware
-import: github.com/ZeroGachis/traefik-block-terminated-clients
+import: github.com/ZeroGachis/traefik-oauth
 
 summary: 'Traefik plugin for OAuth at Smartway'
 
@@ -8,4 +8,4 @@ iconPath: .assets/icon.png
 
 testData:
   JwksEndpoints:
-    
+

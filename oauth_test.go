@@ -23,7 +23,7 @@ func TestFailToCreatePluginWithPublicKeyNotInPEMFormat(t *testing.T) {
 	})
 	_, err := New(ctx, next, cfg, "sw-oauth-plugin")
 
-	if err.Error() != "Fail to decode public key's PEM" {
+	if err.Error() != "fail to decode public key's PEM" {
 		t.Fail()
 	}
 }
@@ -38,7 +38,7 @@ func TestFailToCreatePluginWithoutPublicKey(t *testing.T) {
 	})
 	_, err := New(ctx, next, cfg, "sw-oauth-plugin")
 
-	if err.Error() != "PEM is not of type RSA" {
+	if err.Error() != "pem is not of type RSA" {
 		t.Fail()
 	}
 }

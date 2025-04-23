@@ -57,21 +57,21 @@ func (plugin *Plugin) ParsePublicKeys(public_keys map[string]string) error {
 	for kid, pem_public_key := range public_keys {
 		block, _ := pem.Decode([]byte(pem_public_key))
 		if block == nil {
-			return errors.New("Fail to decode public key's PEM")
+			return errors.New("fail to decode public key's PEM")
 		}
 
 		if block.Type != "PUBLIC KEY" {
-			return errors.New("PEM is not of type RSA")
+			return errors.New("pem is not of type RSA")
 		}
 
 		public_key, err := x509.ParsePKIXPublicKey(block.Bytes)
 		if err != nil {
-			return fmt.Errorf("Failed to parse RSA public key: kid=%s, error=%w", kid, err)
+			return fmt.Errorf("failed to parse RSA public key: kid=%s, error=%w", kid, err)
 		}
 		var rsa_public_key *rsa.PublicKey
 		var ok bool
 		if rsa_public_key, ok = public_key.(*rsa.PublicKey); !ok {
-			return fmt.Errorf("Public key is not RSA: kid=%s", kid)
+			return fmt.Errorf("public key is not RSA: kid=%s", kid)
 		}
 
 		plugin.public_keys[kid] = rsa_public_key
@@ -88,30 +88,30 @@ type JwtHeader struct {
 func (plugin *Plugin) ValidateToken(request *http.Request, rw http.ResponseWriter) error {
 	authorization_header, ok := request.Header["Authorization"]
 	if !ok {
-		return errors.New("Authorization header missing")
+		return errors.New("authorization header missing")
 	}
 
 	if !strings.HasPrefix(authorization_header[0], "Bearer ") {
-		return errors.New("Authorization header type is not bearer")
+		return errors.New("authorization header type is not bearer")
 	}
 	jwt_token := authorization_header[0][7:]
 
 	parts := strings.Split(jwt_token, ".")
 	if len(parts) != 3 {
-		return errors.New("Invalid token format")
+		return errors.New("invalid token format")
 	}
 
 	header, err := base64.RawURLEncoding.DecodeString(parts[0])
 	if err != nil {
-		return errors.New("JWT header is not base64 encoded")
+		return errors.New("jwt header is not base64 encoded")
 	}
 	_, err = base64.RawURLEncoding.DecodeString(parts[1])
 	if err != nil {
-		return errors.New("JWT payload is not base64 encoded")
+		return errors.New("jwt payload is not base64 encoded")
 	}
 	signature, err := base64.RawURLEncoding.DecodeString(parts[2])
 	if err != nil {
-		return errors.New("JWT signature is not base64 encoded")
+		return errors.New("jwt signature is not base64 encoded")
 	}
 
 	var jwt_header JwtHeader
@@ -120,17 +120,17 @@ func (plugin *Plugin) ValidateToken(request *http.Request, rw http.ResponseWrite
 		return err
 	}
 	if jwt_header.Algorithm != "RS256" {
-		return errors.New("JWT must use RS256 algorithm")
+		return errors.New("jwt must use RS256 algorithm")
 	}
 
 	public_key, ok := plugin.public_keys[jwt_header.Kid]
 	if !ok {
-		return fmt.Errorf("No signature for kid=%s", jwt_header.Kid)
+		return fmt.Errorf("no signature for kid=%s", jwt_header.Kid)
 	}
 	jwt_token_header_and_payload := jwt_token[0 : len(parts[0])+len(parts[1])+1]
 	err = VerifySignature(public_key, []byte(jwt_token_header_and_payload), signature)
 	if err != nil {
-		return fmt.Errorf("Invalid signature %w", err)
+		return fmt.Errorf("invalid signature %w", err)
 	}
 
 	return nil

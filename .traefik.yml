@@ -7,4 +7,6 @@ summary: 'Traefik plugin for OAuth at Smartway'
 iconPath: .assets/icon.png
 
 testData:
-  JwksEndpoints: []
+  JwksEndpoints:
+    - https://www.googleapis.com/oauth2/v3/certs
+

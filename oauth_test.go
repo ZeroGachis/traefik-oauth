@@ -1,4 +1,4 @@
-package oauth
+package traefik_oauth
 
 import (
 	"context"

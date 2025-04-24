@@ -4,7 +4,7 @@ import: github.com/ZeroGachis/traefik-oauth
 
 summary: 'Traefik plugin for OAuth at Smartway'
 
-iconPath: .assets/icon.png
+iconPath: assets/icon.png
 
 testData:
   JwksEndpoints:

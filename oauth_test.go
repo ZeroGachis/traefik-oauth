@@ -10,6 +10,19 @@ import (
 	"time"
 )
 
+func TestCreatePluginWithoutJwksEndpoints(t *testing.T) {
+	cfg := CreateConfig()
+
+	ctx := context.Background()
+	next := http.HandlerFunc(func(rw http.ResponseWriter, _ *http.Request) {
+		rw.WriteHeader(http.StatusOK)
+	})
+	_, err := New(ctx, next, cfg, "sw-oauth-plugin")
+	if err != nil {
+		t.Fail()
+	}
+}
+
 func TestFailToCreatePluginWithMalformedJwksEndpoint(t *testing.T) {
 	cfg := CreateConfig()
 	cfg.JwksEndpoints = []string{"not an url"}

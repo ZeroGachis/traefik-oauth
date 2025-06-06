@@ -18,32 +18,6 @@ import (
 	"time"
 )
 
-type Log struct {
-	Level   string `json:"level"`
-	Message string `json:"message"`
-}
-
-func logError(message string) {
-	log("ERROR", message)
-}
-
-func logInfo(message string) {
-	log("INFO", message)
-}
-
-func log(level string, message string) {
-	log := Log{
-		Level:   level,
-		Message: fmt.Sprint("Traefik-Oauth -", message),
-	}
-	jsonlog, err := json.Marshal(log)
-	if err != nil {
-		os.Stdout.WriteString(fmt.Sprintln("Traefik-Oauth - Failed serialize", level, "log as JSON:", message)) //nolint:staticcheck
-	} else {
-		os.Stdout.WriteString(string(jsonlog) + "\n")
-	}
-}
-
 type Config struct {
 	JwksEndpoints []string
 }
@@ -74,13 +48,13 @@ func New(ctx context.Context, next http.Handler, config *Config, name string) (h
 	}
 
 	if err := plugin.ParseJwksEndpoints(config.JwksEndpoints); err != nil {
-		logError(err.Error())
+		plugin.logError(err.Error())
 
 		return nil, errors.New("auth failed")
 	}
 
 	if backgroundRefreshPublicKeysCancel[name] != nil {
-		logInfo(fmt.Sprint("Cancel BackgroundRefreshPublicKeys: ", name))
+		plugin.logInfo(fmt.Sprint("Cancel BackgroundRefreshPublicKeys: ", name))
 		backgroundRefreshPublicKeysCancel[name]()
 	}
 	cancel, cancelFunc := context.WithCancel(ctx)
@@ -93,7 +67,7 @@ func New(ctx context.Context, next http.Handler, config *Config, name string) (h
 
 func (plugin *Plugin) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	if err := plugin.ValidateToken(req, rw); err != nil {
-		logError(err.Error())
+		plugin.logError(err.Error())
 		http.Error(rw, "Auth failed", http.StatusUnauthorized)
 
 		return
@@ -189,7 +163,7 @@ func (plugin *Plugin) BackgroundRefreshPublicKeys() {
 	for {
 		select {
 		case <-plugin.cancelCtx.Done():
-			logInfo(fmt.Sprint("Quit BackgroundRefreshPublicKeys: ", plugin.name))
+			plugin.logInfo(fmt.Sprint("Quit BackgroundRefreshPublicKeys: ", plugin.name))
 
 			return
 		case <-time.After(15 * time.Minute):
@@ -215,30 +189,30 @@ func (plugin *Plugin) RefreshPublicKeys(ctx context.Context) {
 	fetched_public_keys := make(map[string]*rsa.PublicKey)
 
 	for _, jwks_endpoint := range plugin.jwksEndpoints {
-		logInfo(fmt.Sprint("RefreshPublicKeys - Endpoint: ", jwks_endpoint))
+		plugin.logInfo(fmt.Sprint("RefreshPublicKeys - Endpoint: ", jwks_endpoint))
 		request, err := http.NewRequestWithContext(ctx, http.MethodGet, jwks_endpoint.String(), nil)
 		if err != nil {
-			logError(fmt.Sprint("RefreshPublicKeys - Failed to create request for endpoint: ", jwks_endpoint, "; error: ", err.Error()))
+			plugin.logError(fmt.Sprint("RefreshPublicKeys - Failed to create request for endpoint: ", jwks_endpoint, "; error: ", err.Error()))
 
 			continue
 		}
 		response, err := plugin.httpClient.Do(request)
 		if err != nil {
-			logError(fmt.Sprint("RefreshPublicKeys - Failed to request endpoint: ", jwks_endpoint, "; error: ", err.Error()))
+			plugin.logError(fmt.Sprint("RefreshPublicKeys - Failed to request endpoint: ", jwks_endpoint, "; error: ", err.Error()))
 
 			continue
 		}
 		body, err := io.ReadAll(response.Body)
 		defer response.Body.Close()
 		if err != nil {
-			logError(fmt.Sprint("RefreshPublicKeys - Failed to read response for endpoint: ", jwks_endpoint, "; error: ", err.Error()))
+			plugin.logError(fmt.Sprint("RefreshPublicKeys - Failed to read response for endpoint: ", jwks_endpoint, "; error: ", err.Error()))
 
 			continue
 		}
 		var jwks_keys Keys
 		err = json.Unmarshal(body, &jwks_keys)
 		if err != nil {
-			logError(fmt.Sprint("RefreshPublicKeys - Failed to parse response for endpoint: ", jwks_endpoint, "; error: ", err.Error()))
+			plugin.logError(fmt.Sprint("RefreshPublicKeys - Failed to parse response for endpoint: ", jwks_endpoint, "; error: ", err.Error()))
 
 			continue
 		}
@@ -249,13 +223,13 @@ func (plugin *Plugin) RefreshPublicKeys(ctx context.Context) {
 				{
 					n_bytes, err := base64.RawURLEncoding.DecodeString(key.N)
 					if err != nil {
-						logError(fmt.Sprint("Failed to decode jwks key N", key.N, "; error: ", err.Error()))
+						plugin.logError(fmt.Sprint("Failed to decode jwks key N", key.N, "; error: ", err.Error()))
 
 						break
 					}
 					e_bytes, err := base64.RawURLEncoding.DecodeString(key.E)
 					if err != nil {
-						logError(fmt.Sprint("Failed to decode jwks key E", key.E, "; error: ", err.Error()))
+						plugin.logError(fmt.Sprint("Failed to decode jwks key E", key.E, "; error: ", err.Error()))
 
 						break
 					}
@@ -273,5 +247,33 @@ func (plugin *Plugin) RefreshPublicKeys(ctx context.Context) {
 
 	for kid, value := range fetched_public_keys {
 		plugin.public_keys[kid] = value
+	}
+}
+
+type Log struct {
+	Level      string `json:"level"`
+	Message    string `json:"message"`
+	PluginName string `json:"plugin_name"`
+}
+
+func (plugin *Plugin) logError(message string) {
+	plugin.log("ERROR", message)
+}
+
+func (plugin *Plugin) logInfo(message string) {
+	plugin.log("INFO", message)
+}
+
+func (plugin *Plugin) log(level string, message string) {
+	log := Log{
+		Level:      level,
+		Message:    fmt.Sprint("Traefik-Oauth -", message),
+		PluginName: plugin.name,
+	}
+	jsonlog, err := json.Marshal(log)
+	if err != nil {
+		os.Stdout.WriteString(fmt.Sprintln("Traefik-Oauth - Failed serialize", level, "log as JSON:", message)) //nolint:staticcheck
+	} else {
+		os.Stdout.WriteString(string(jsonlog) + "\n")
 	}
 }

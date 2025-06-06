@@ -13,6 +13,7 @@ linters:
     - mnd
     - paralleltest
     - revive
+    - tagliatelle
     - testpackage
     - varnamelen
     - wrapcheck

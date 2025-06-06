@@ -246,6 +246,7 @@ func (plugin *Plugin) RefreshPublicKeys(ctx context.Context) {
 	defer plugin.public_keys_lock.Unlock()
 
 	for kid, value := range fetched_public_keys {
+		plugin.logInfo(fmt.Sprint("Register public key ", kid))
 		plugin.public_keys[kid] = value
 	}
 }

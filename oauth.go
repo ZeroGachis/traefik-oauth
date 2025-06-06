@@ -218,27 +218,27 @@ func (plugin *Plugin) RefreshPublicKeys(ctx context.Context) {
 		logInfo(fmt.Sprint("RefreshPublicKeys - Endpoint: ", jwks_endpoint))
 		request, err := http.NewRequestWithContext(ctx, http.MethodGet, jwks_endpoint.String(), nil)
 		if err != nil {
-			logError(fmt.Sprint("RefreshPublicKeys - Failed to create request for endpoint: ", jwks_endpoint))
+			logError(fmt.Sprint("RefreshPublicKeys - Failed to create request for endpoint: ", jwks_endpoint, "; error: ", err.Error()))
 
 			continue
 		}
 		response, err := plugin.httpClient.Do(request)
 		if err != nil {
-			logError(fmt.Sprint("RefreshPublicKeys - Failed to request endpoint: ", jwks_endpoint))
+			logError(fmt.Sprint("RefreshPublicKeys - Failed to request endpoint: ", jwks_endpoint, "; error: ", err.Error()))
 
 			continue
 		}
 		body, err := io.ReadAll(response.Body)
 		defer response.Body.Close()
 		if err != nil {
-			fmt.Println("RefreshPublicKeys - Failed to read response for endpoint: ", jwks_endpoint)
+			logError(fmt.Sprint("RefreshPublicKeys - Failed to read response for endpoint: ", jwks_endpoint, "; error: ", err.Error()))
 
 			continue
 		}
 		var jwks_keys Keys
 		err = json.Unmarshal(body, &jwks_keys)
 		if err != nil {
-			logError(fmt.Sprint("RefreshPublicKeys - Failed to parse response for endpoint: ", jwks_endpoint))
+			logError(fmt.Sprint("RefreshPublicKeys - Failed to parse response for endpoint: ", jwks_endpoint, "; error: ", err.Error()))
 
 			continue
 		}
@@ -249,13 +249,13 @@ func (plugin *Plugin) RefreshPublicKeys(ctx context.Context) {
 				{
 					n_bytes, err := base64.RawURLEncoding.DecodeString(key.N)
 					if err != nil {
-						logError(fmt.Sprint("Failed to decode jwks key N", key.N))
+						logError(fmt.Sprint("Failed to decode jwks key N", key.N, "; error: ", err.Error()))
 
 						break
 					}
 					e_bytes, err := base64.RawURLEncoding.DecodeString(key.E)
 					if err != nil {
-						logError(fmt.Sprint("Failed to decode jwks key E", key.E))
+						logError(fmt.Sprint("Failed to decode jwks key E", key.E, "; error: ", err.Error()))
 
 						break
 					}

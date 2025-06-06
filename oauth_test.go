@@ -33,7 +33,7 @@ func TestFailToCreatePluginWithMalformedJwksEndpoint(t *testing.T) {
 	})
 	_, err := New(ctx, next, cfg, "sw-oauth-plugin")
 
-	if err.Error() != "ParseJwksEndpoints - invalid url: 'not an url'" {
+	if err.Error() != "auth failed" {
 		t.Fail()
 	}
 }

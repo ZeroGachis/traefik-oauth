@@ -17,6 +17,7 @@ func TestCreatePluginWithoutJwksEndpoints(t *testing.T) {
 	next := http.HandlerFunc(func(rw http.ResponseWriter, _ *http.Request) {
 		rw.WriteHeader(http.StatusOK)
 	})
+
 	_, err := New(ctx, next, cfg, "sw-oauth-plugin")
 	if err != nil {
 		t.Fail()
@@ -49,6 +50,7 @@ const (
 func setupTestJwksServer() *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
+
 		jwks := fmt.Sprintf(`{"keys":[%s]}`, jwk)
 		_, _ = fmt.Fprintln(w, jwks)
 	}))
@@ -56,6 +58,7 @@ func setupTestJwksServer() *httptest.Server {
 
 func setupWorkingPlugin(t *testing.T, ctx context.Context, jwks_endpoints []string) http.Handler {
 	t.Helper()
+
 	cfg := CreateConfig()
 	cfg.JwksEndpoints = jwks_endpoints
 
@@ -68,6 +71,7 @@ func setupWorkingPlugin(t *testing.T, ctx context.Context, jwks_endpoints []stri
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	time.Sleep(1 * time.Second)
 
 	return handler
@@ -87,10 +91,12 @@ func TestForwardRequestWithAValidJwtToken(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	req.Header["Authorization"] = []string{access_token_with_long_exp}
 
 	handler.ServeHTTP(recorder, req)
 	response := recorder.Result()
+
 	body, _ := io.ReadAll(response.Body)
 	if response.StatusCode != http.StatusOK && string(body) != "It worked" {
 		t.Errorf("Got status code %d, %s", recorder.Code, body)
@@ -111,9 +117,11 @@ func TestFailWhenJwtTokenHasNoExpiry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	req.Header["Authorization"] = []string{access_token_without_exp}
 
 	handler.ServeHTTP(recorder, req)
+
 	response := recorder.Result()
 	if response.StatusCode != http.StatusUnauthorized {
 		t.Errorf("Expected status code 401, got  %d", recorder.Code)
@@ -134,9 +142,11 @@ func TestFailWhenJwtTokenHasExpired(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	req.Header["Authorization"] = []string{access_token_with_expired_exp}
 
 	handler.ServeHTTP(recorder, req)
+
 	response := recorder.Result()
 	if response.StatusCode != http.StatusUnauthorized {
 		t.Errorf("Expected status code 401, got  %d", recorder.Code)
@@ -157,9 +167,11 @@ func TestFailWhenJwtTokenIsMalformed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	req.Header["Authorization"] = []string{"Bearer value"}
 
 	handler.ServeHTTP(recorder, req)
+
 	response := recorder.Result()
 	if response.StatusCode != http.StatusUnauthorized {
 		t.Errorf("Expected status code 401, got  %d", recorder.Code)
@@ -180,9 +192,11 @@ func TestFailWhenAuthorizationHeaderIsNotBearer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	req.Header["Authorization"] = []string{"Basic value"}
 
 	handler.ServeHTTP(recorder, req)
+
 	response := recorder.Result()
 	if response.StatusCode != http.StatusUnauthorized {
 		t.Errorf("Expected status code 401, got  %d", recorder.Code)
@@ -204,6 +218,7 @@ func TestFailWithMissingAuthorizationHeader(t *testing.T) {
 	}
 
 	handler.ServeHTTP(recorder, req)
+
 	response := recorder.Result()
 	if response.StatusCode != http.StatusUnauthorized {
 		t.Errorf("Expected status code 401, got  %d", recorder.Code)

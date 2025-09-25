@@ -42,13 +42,14 @@ func New(ctx context.Context, next http.Handler, config *Config, name string) (h
 		httpClient:    &http.Client{},
 	}
 
-	if err := plugin.ParseJwksEndpoints(config.JwksEndpoints); err != nil {
+	err := plugin.ParseJwksEndpoints(config.JwksEndpoints)
+	if err != nil {
 		plugin.logError(err.Error())
 
 		return nil, errors.New("failed to parse jwks endpoints")
 	}
 
-	err := plugin.RefreshPublicKeys(ctx)
+	err = plugin.RefreshPublicKeys(ctx)
 	if err != nil {
 		plugin.logError(fmt.Sprint("RefreshPublicKeys - Failed: ", err))
 	}
@@ -57,11 +58,13 @@ func New(ctx context.Context, next http.Handler, config *Config, name string) (h
 }
 
 func (plugin *Plugin) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
-	if err := plugin.ValidateToken(req, rw); err != nil {
+	err := plugin.ValidateToken(req, rw)
+	if err != nil {
 		http.Error(rw, "Auth failed", http.StatusUnauthorized)
 
 		return
 	}
+
 	plugin.next.ServeHTTP(rw, req)
 }
 
@@ -99,6 +102,7 @@ func (plugin *Plugin) ValidateToken(request *http.Request, rw http.ResponseWrite
 
 		return validationError
 	}
+
 	jwt_token := authorization_header[0][7:]
 
 	parts := strings.Split(jwt_token, ".")
@@ -116,6 +120,7 @@ func (plugin *Plugin) ValidateToken(request *http.Request, rw http.ResponseWrite
 
 		return validationError
 	}
+
 	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
 	if err != nil {
 		validationError := errors.New("jwt payload is not base64 encoded")
@@ -123,6 +128,7 @@ func (plugin *Plugin) ValidateToken(request *http.Request, rw http.ResponseWrite
 
 		return validationError
 	}
+
 	signature, err := base64.RawURLEncoding.DecodeString(parts[2])
 	if err != nil {
 		validationError := errors.New("jwt signature is not base64 encoded")
@@ -132,6 +138,7 @@ func (plugin *Plugin) ValidateToken(request *http.Request, rw http.ResponseWrite
 	}
 
 	var jwt_header JwtHeader
+
 	err = json.Unmarshal(header, &jwt_header)
 	if err != nil {
 		return err
@@ -151,7 +158,9 @@ func (plugin *Plugin) ValidateToken(request *http.Request, rw http.ResponseWrite
 
 		return validationError
 	}
+
 	jwt_token_header_and_payload := jwt_token[0 : len(parts[0])+len(parts[1])+1]
+
 	err = VerifySignature(public_key, []byte(jwt_token_header_and_payload), signature)
 	if err != nil {
 		validationError := fmt.Errorf("invalid signature %w", err)
@@ -166,6 +175,7 @@ func (plugin *Plugin) ValidateToken(request *http.Request, rw http.ResponseWrite
 
 		return err
 	}
+
 	if !ok {
 		validationError := errors.New("JWT token expiry reached")
 		plugin.logInfo(validationError.Error())
@@ -178,12 +188,14 @@ func (plugin *Plugin) ValidateToken(request *http.Request, rw http.ResponseWrite
 
 func VerifySignature(public_key *rsa.PublicKey, value []byte, signature []byte) error {
 	hash := crypto.SHA256.New()
+
 	_, err := hash.Write(value)
 	if err != nil {
 		return err
 	}
 
-	if err := rsa.VerifyPKCS1v15(public_key, crypto.SHA256, hash.Sum(nil), signature); err != nil {
+	err = rsa.VerifyPKCS1v15(public_key, crypto.SHA256, hash.Sum(nil), signature)
+	if err != nil {
 		return fmt.Errorf("token verification failed (RSAPKCS): %w", err)
 	}
 
@@ -196,6 +208,7 @@ type JwtPayload struct {
 
 func (plugin *Plugin) VerifyExpiry(payload []byte) (bool, error) {
 	var jwt_payload JwtPayload
+
 	err := json.Unmarshal(payload, &jwt_payload)
 	if err != nil {
 		return false, fmt.Errorf("failed to parse jwt token payload %w", err)
@@ -205,6 +218,7 @@ func (plugin *Plugin) VerifyExpiry(payload []byte) (bool, error) {
 	if expiry == 0 {
 		return false, nil
 	}
+
 	now := time.Now().Unix()
 	if expiry > now {
 		return true, nil
@@ -231,20 +245,26 @@ func (plugin *Plugin) RefreshPublicKeys(ctx context.Context) error {
 
 	for _, jwks_endpoint := range plugin.jwksEndpoints {
 		plugin.logInfo(fmt.Sprint("RefreshPublicKeys - Endpoint: ", jwks_endpoint))
+
 		request, err := http.NewRequestWithContext(ctx, http.MethodGet, jwks_endpoint.String(), nil)
 		if err != nil {
 			return err
 		}
+
 		response, err := plugin.httpClient.Do(request)
 		if err != nil {
 			return err
 		}
+
 		body, err := io.ReadAll(response.Body)
 		defer response.Body.Close()
+
 		if err != nil {
 			return err
 		}
+
 		var jwks_keys Keys
+
 		err = json.Unmarshal(body, &jwks_keys)
 		if err != nil {
 			return err
@@ -256,10 +276,12 @@ func (plugin *Plugin) RefreshPublicKeys(ctx context.Context) error {
 				if err != nil {
 					return err
 				}
+
 				e_bytes, err := base64.RawURLEncoding.DecodeString(key.E)
 				if err != nil {
 					return err
 				}
+
 				rsa_public_key := new(rsa.PublicKey)
 				rsa_public_key.N = new(big.Int).SetBytes(n_bytes)
 				rsa_public_key.E = int(new(big.Int).SetBytes(e_bytes).Uint64()) //nolint:gosec
@@ -296,6 +318,7 @@ func (plugin *Plugin) log(level string, message string) {
 		Message:    fmt.Sprint("Traefik-Oauth -", message),
 		PluginName: plugin.name,
 	}
+
 	jsonlog, err := json.Marshal(log)
 	if err != nil {
 		os.Stdout.WriteString(fmt.Sprintln("Traefik-Oauth - Failed serialize", level, "log as JSON:", message)) //nolint:staticcheck

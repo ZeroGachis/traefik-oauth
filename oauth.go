@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"time"
 )
 
 type Config struct {
@@ -57,7 +58,6 @@ func New(ctx context.Context, next http.Handler, config *Config, name string) (h
 
 func (plugin *Plugin) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	if err := plugin.ValidateToken(req, rw); err != nil {
-		plugin.logError(err.Error())
 		http.Error(rw, "Auth failed", http.StatusUnauthorized)
 
 		return
@@ -85,31 +85,50 @@ type JwtHeader struct {
 
 func (plugin *Plugin) ValidateToken(request *http.Request, rw http.ResponseWriter) error {
 	authorization_header, ok := request.Header["Authorization"]
+
 	if !ok {
-		return errors.New("authorization header missing")
+		validationError := errors.New("authorization header missing")
+		plugin.logError(validationError.Error())
+
+		return validationError
 	}
 
 	if !strings.HasPrefix(authorization_header[0], "Bearer ") {
-		return errors.New("authorization header type is not bearer")
+		validationError := errors.New("authorization header type is not bearer")
+		plugin.logError(validationError.Error())
+
+		return validationError
 	}
 	jwt_token := authorization_header[0][7:]
 
 	parts := strings.Split(jwt_token, ".")
 	if len(parts) != 3 {
-		return errors.New("invalid token format")
+		validationError := errors.New("invalid token format")
+		plugin.logError(validationError.Error())
+
+		return validationError
 	}
 
 	header, err := base64.RawURLEncoding.DecodeString(parts[0])
 	if err != nil {
-		return errors.New("jwt header is not base64 encoded")
+		validationError := errors.New("jwt header is not base64 encoded")
+		plugin.logError(validationError.Error())
+
+		return validationError
 	}
-	_, err = base64.RawURLEncoding.DecodeString(parts[1])
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
 	if err != nil {
-		return errors.New("jwt payload is not base64 encoded")
+		validationError := errors.New("jwt payload is not base64 encoded")
+		plugin.logError(validationError.Error())
+
+		return validationError
 	}
 	signature, err := base64.RawURLEncoding.DecodeString(parts[2])
 	if err != nil {
-		return errors.New("jwt signature is not base64 encoded")
+		validationError := errors.New("jwt signature is not base64 encoded")
+		plugin.logError(validationError.Error())
+
+		return validationError
 	}
 
 	var jwt_header JwtHeader
@@ -117,18 +136,41 @@ func (plugin *Plugin) ValidateToken(request *http.Request, rw http.ResponseWrite
 	if err != nil {
 		return err
 	}
+
 	if jwt_header.Algorithm != "RS256" {
-		return errors.New("jwt must use RS256 algorithm")
+		validationError := errors.New("jwt must use RS256 algorithm")
+		plugin.logError(validationError.Error())
+
+		return validationError
 	}
 
 	public_key, ok := plugin.public_keys[jwt_header.Kid]
 	if !ok {
-		return fmt.Errorf("no signature for kid=%s", jwt_header.Kid)
+		validationError := fmt.Errorf("no signature for kid=%s", jwt_header.Kid)
+		plugin.logError(validationError.Error())
+
+		return validationError
 	}
 	jwt_token_header_and_payload := jwt_token[0 : len(parts[0])+len(parts[1])+1]
 	err = VerifySignature(public_key, []byte(jwt_token_header_and_payload), signature)
 	if err != nil {
-		return fmt.Errorf("invalid signature %w", err)
+		validationError := fmt.Errorf("invalid signature %w", err)
+		plugin.logError(validationError.Error())
+
+		return validationError
+	}
+
+	ok, err = plugin.VerifyExpiry(payload)
+	if err != nil {
+		plugin.logError(err.Error())
+
+		return err
+	}
+	if !ok {
+		validationError := errors.New("JWT token expiry reached")
+		plugin.logInfo(validationError.Error())
+
+		return validationError
 	}
 
 	return nil
@@ -146,6 +188,29 @@ func VerifySignature(public_key *rsa.PublicKey, value []byte, signature []byte) 
 	}
 
 	return nil
+}
+
+type JwtPayload struct {
+	Exp int64 `json:"exp"`
+}
+
+func (plugin *Plugin) VerifyExpiry(payload []byte) (bool, error) {
+	var jwt_payload JwtPayload
+	err := json.Unmarshal(payload, &jwt_payload)
+	if err != nil {
+		return false, fmt.Errorf("failed to parse jwt token payload %w", err)
+	}
+
+	expiry := jwt_payload.Exp
+	if expiry == 0 {
+		return false, nil
+	}
+	now := time.Now().Unix()
+	if expiry > now {
+		return true, nil
+	} else {
+		return false, nil
+	}
 }
 
 type Key struct {

@@ -251,7 +251,7 @@ func (plugin *Plugin) RefreshPublicKeys(ctx context.Context) error {
 			return err
 		}
 
-		response, err := plugin.httpClient.Do(request)
+		response, err := plugin.httpClient.Do(request) //nolint:gosec
 		if err != nil {
 			return err
 		}

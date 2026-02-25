@@ -1,0 +1,19 @@
+name: "Release"
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - 'README.md'
+
+jobs:
+  github-release:
+    uses: ZeroGachis/.github/.github/workflows/gh-release-please.yml@v6
+    secrets: inherit
+    permissions:
+      contents: write
+      pull-requests: write
+    with:
+        major_and_minor_tags: false

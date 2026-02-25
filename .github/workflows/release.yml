@@ -6,7 +6,12 @@ on:
     branches:
       - main
     paths-ignore:
-      - 'README.md'
+      - README.md
+      - '.config/**'
+      - '.github/**'
+      - '.golangci.yml'
+      - '.release-please-manifest.json'
+      - 'release-please-config.json'
 
 jobs:
   github-release:

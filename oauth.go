@@ -91,14 +91,14 @@ func (plugin *Plugin) ValidateToken(request *http.Request, rw http.ResponseWrite
 
 	if !ok {
 		validationError := errors.New("authorization header missing")
-		plugin.logError(validationError.Error())
+		plugin.logWarning(validationError.Error())
 
 		return validationError
 	}
 
 	if !strings.HasPrefix(authorization_header[0], "Bearer ") {
 		validationError := errors.New("authorization header type is not bearer")
-		plugin.logError(validationError.Error())
+		plugin.logWarning(validationError.Error())
 
 		return validationError
 	}
@@ -108,7 +108,7 @@ func (plugin *Plugin) ValidateToken(request *http.Request, rw http.ResponseWrite
 	parts := strings.Split(jwt_token, ".")
 	if len(parts) != 3 {
 		validationError := errors.New("invalid token format")
-		plugin.logError(validationError.Error())
+		plugin.logWarning(validationError.Error())
 
 		return validationError
 	}
@@ -116,7 +116,7 @@ func (plugin *Plugin) ValidateToken(request *http.Request, rw http.ResponseWrite
 	header, err := base64.RawURLEncoding.DecodeString(parts[0])
 	if err != nil {
 		validationError := errors.New("jwt header is not base64 encoded")
-		plugin.logError(validationError.Error())
+		plugin.logWarning(validationError.Error())
 
 		return validationError
 	}
@@ -124,7 +124,7 @@ func (plugin *Plugin) ValidateToken(request *http.Request, rw http.ResponseWrite
 	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
 	if err != nil {
 		validationError := errors.New("jwt payload is not base64 encoded")
-		plugin.logError(validationError.Error())
+		plugin.logWarning(validationError.Error())
 
 		return validationError
 	}
@@ -132,7 +132,7 @@ func (plugin *Plugin) ValidateToken(request *http.Request, rw http.ResponseWrite
 	signature, err := base64.RawURLEncoding.DecodeString(parts[2])
 	if err != nil {
 		validationError := errors.New("jwt signature is not base64 encoded")
-		plugin.logError(validationError.Error())
+		plugin.logWarning(validationError.Error())
 
 		return validationError
 	}
@@ -146,7 +146,7 @@ func (plugin *Plugin) ValidateToken(request *http.Request, rw http.ResponseWrite
 
 	if jwt_header.Algorithm != "RS256" {
 		validationError := errors.New("jwt must use RS256 algorithm")
-		plugin.logError(validationError.Error())
+		plugin.logWarning(validationError.Error())
 
 		return validationError
 	}
@@ -154,7 +154,7 @@ func (plugin *Plugin) ValidateToken(request *http.Request, rw http.ResponseWrite
 	public_key, ok := plugin.public_keys[jwt_header.Kid]
 	if !ok {
 		validationError := fmt.Errorf("no signature for kid=%s", jwt_header.Kid)
-		plugin.logError(validationError.Error())
+		plugin.logWarning(validationError.Error())
 
 		return validationError
 	}
@@ -164,21 +164,21 @@ func (plugin *Plugin) ValidateToken(request *http.Request, rw http.ResponseWrite
 	err = VerifySignature(public_key, []byte(jwt_token_header_and_payload), signature)
 	if err != nil {
 		validationError := fmt.Errorf("invalid signature %w", err)
-		plugin.logError(validationError.Error())
+		plugin.logWarning(validationError.Error())
 
 		return validationError
 	}
 
 	ok, err = plugin.VerifyExpiry(payload)
 	if err != nil {
-		plugin.logError(err.Error())
+		plugin.logWarning(err.Error())
 
 		return err
 	}
 
 	if !ok {
 		validationError := errors.New("JWT token expiry reached")
-		plugin.logInfo(validationError.Error())
+		plugin.logDebug(validationError.Error())
 
 		return validationError
 	}
@@ -244,7 +244,7 @@ func (plugin *Plugin) RefreshPublicKeys(ctx context.Context) error {
 	fetched_public_keys := make(map[string]*rsa.PublicKey)
 
 	for _, jwks_endpoint := range plugin.jwksEndpoints {
-		plugin.logInfo(fmt.Sprint("RefreshPublicKeys - Endpoint: ", jwks_endpoint))
+		plugin.logDebug(fmt.Sprint("RefreshPublicKeys - Endpoint: ", jwks_endpoint))
 
 		request, err := http.NewRequestWithContext(ctx, http.MethodGet, jwks_endpoint.String(), nil)
 		if err != nil {
@@ -291,7 +291,7 @@ func (plugin *Plugin) RefreshPublicKeys(ctx context.Context) error {
 	}
 
 	for kid, value := range fetched_public_keys {
-		plugin.logInfo(fmt.Sprint("Register public key ", kid))
+		plugin.logDebug(fmt.Sprint("Register public key ", kid))
 		plugin.public_keys[kid] = value
 	}
 
@@ -308,8 +308,12 @@ func (plugin *Plugin) logError(message string) {
 	plugin.log("ERROR", message)
 }
 
-func (plugin *Plugin) logInfo(message string) {
-	plugin.log("INFO", message)
+func (plugin *Plugin) logWarning(message string) {
+	plugin.log("WARNING", message)
+}
+
+func (plugin *Plugin) logDebug(message string) {
+	plugin.log("DEBUG", message)
 }
 
 func (plugin *Plugin) log(level string, message string) {
